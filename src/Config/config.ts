@@ -5,4 +5,7 @@ export const config = {
 	QUANTITY_ADJUST: 10,
 	PRICE_ADJUST: 0.1,
 	PROFIT_PERCENT: 2,
+	ENTRY_BUY_PERCENT: 0.9999,
+	ENTRY_SELL_PERCENT: 1.0001,
+	STOP_LOSS_PERCENT: 1, //callbackRate = 1 for 1%
 };
