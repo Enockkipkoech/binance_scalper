@@ -1,7 +1,7 @@
-import { scalper } from "./Scalper";
+import { scalper, exitEngine } from "./Scalper";
 import dateFormat from "dateformat";
-import express from "express";
-const app = express();
+
+import "./Database/connect";
 
 const main = async () => {
 	console.log(`****`.repeat(15));
@@ -17,12 +17,8 @@ const main = async () => {
 		console.log(message);
 	}
 
-	// API
-	app.get("/binanceData", (req, res) => {
-		let binanceData = req.body;
-	});
-
-	// Execute Main Trading Function
+	// Execute Main Trading Functions
 	scalper();
+	// exitEngine();
 };
 main();
