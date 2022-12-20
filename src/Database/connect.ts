@@ -4,10 +4,12 @@ dotenv.config();
 
 const connectDB = async () => {
 	try {
-		if (!process.env.MONGO_URI) {
-			throw new Error("MONGO_URI not found in .env file");
-		}
-		await mongoose.connect(process.env.MONGO_URI!, {
+		// if (!process.env.MONGO_URI) {
+		// 	throw new Error("MONGO_URI not found in .env file");
+		// }
+		const mongoURI = `mongodb+srv://enock:MAiuKJaKV7va3Det@cluster0.jtj4c.mongodb.net/Binance_Futures?retryWrites=true&w=majority`;
+		await mongoose.connect(mongoURI, {
+			// process.env.MONGO_URI!, {
 			keepAlive: true,
 			connectTimeoutMS: 60000,
 			socketTimeoutMS: 60000,

@@ -6,6 +6,7 @@ import {
 } from "../ExchangeInfo";
 import { config } from "../Config";
 import { saveToDB, IOrders, queryAllOrders } from "../Database";
+import { INewOrder, OrderTimeInForce, OrderSide, OrderType } from "../helpers";
 
 export const scalper = async () => {
 	try {
@@ -14,12 +15,11 @@ export const scalper = async () => {
 		// console.log(`Exchange Info:`, raw_Info);
 
 		// Filter Exchange info
-
 		let MultiOrders: any = [];
 		console.log(`MultiOrders`, MultiOrders);
 
 		//Raw info objects
-		// const { symbols, assets, exchangeFilters, rateLimits, timezone } = raw_Info;
+		const { symbols, assets, exchangeFilters, rateLimits, timezone } = raw_Info;
 		let _symbol_Info = raw_Info.symbols.map((token: any) => token.symbol);
 
 		// Get Prices
@@ -49,20 +49,15 @@ export const scalper = async () => {
 				let marketTakeBound = raw_Info.symbols[i].marketTakeBound;
 
 				// TOTAL FEES
-				const totalFees =
-					Number(triggerProtect) +
-					Number(liquidationFee) +
-					Number(marketTakeBound);
+				const totalFees = Number(liquidationFee) + Number(marketTakeBound);
 
 				// console.log(`Total FEES: ${totalFees} %`);
 
-				let multiplierDown = raw_Info.symbols[i].filters[0].multiplierDown; //Default 0.9000
-				let multiplierUp = raw_Info.symbols[i].filters[0].multiplierDown; //Default 1.1000
+				let multiplierDown = raw_Info.symbols[i].filters[6].multiplierDown; //Default 0.9000
+				let multiplierUp = raw_Info.symbols[i].filters[6].multiplierUp; //Default 1.1000
 
-				// console.log(`multiplierDown`, multiplierDown);
-
-				// TODO Get price at Time intervals {"5m","15m","30m","1h","2h","4h","6h","12h","1d"}
-				let hour_24 = "id";
+				// Get price at Time intervals {"5m","15m","30m","1h","2h","4h","6h","12h","1d"}
+				let hour_24 = "1d";
 				let min_15 = "15m";
 				let min_5 = "5";
 
@@ -71,61 +66,30 @@ export const scalper = async () => {
 				const min_5Data = await getPriceAtInterval(_symbol, min_5);
 				let priceIntervals = { hour_24Data, min_15Data, min_5Data };
 
-				type BooleanString = "true" | "false";
-				type BooleanStringCapitalised = "TRUE" | "FALSE";
-
-				interface INewOrder {
-					symbol: string;
-					side: string;
-					type: string;
-					timeInForce: string;
-					quantity: string;
-					reduceOnly?: BooleanString;
-					price: string;
-					stopPrice?: string;
-					closePosition?: BooleanString;
-					activationPrice?: string;
-					callbackRate?: string;
-					priceProtect?: BooleanStringCapitalised;
-					newOrderRespType?: OrderResponseType;
-				}
-
 				let last5M_Price = min_15Data.lastPrice;
-				let percentChange = Number(min_15Data.priceChangePercent);
-				type orderSide = "BUY" | "SELL";
-				type OrderType =
-					| "LIMIT"
-					| "MARKET"
-					| "STOP"
-					| "STOP_MARKET"
-					| "TAKE_PROFIT"
-					| "TAKE_PROFIT_MARKET"
-					| "TRAILING_STOP_MARKET";
-
-				type OrderTimeInForce = "GTC" | "IOC" | "FOK" | "GTE_GTC";
-				type OrderResponseType = "ACK" | "RESULT" | "FULL";
+				let percentChange = Number(min_5Data.priceChangePercent);
 
 				// Build Order params
-				let type: OrderType = "TRAILING_STOP_MARKET";
+				let type: OrderType = "LIMIT";
 				let timeInForce: OrderTimeInForce = "GTC";
 				let quantity = (
 					minQty < 10 ? minQty + config.QUANTITY_ADJUST : minQty
 				).toFixed(quantityPrecision);
 
-				//TODO Check price to be greater than minPrice10 and adjust accordingly tpo avoid notional error
+				//TODO Check price to be greater than minPrice 10 and adjust accordingly to avoid notional error
 				let price: string = currentPrice.toFixed(pricePrecision);
 
 				// CALCULATE TAKE PROFIT PRICE
 				const cumQuote = Number(quantity) * Number(price);
 				const PROFIT_PERCENT = config.PROFIT_PERCENT / 100;
 				const cumQuotePlusFeesPlusProfitBuy =
-					cumQuote + Number((totalFees + PROFIT_PERCENT) * cumQuote);
+					cumQuote + Number(triggerProtect * cumQuote);
 				let activationPriceOnProfitBuy = (
 					cumQuotePlusFeesPlusProfitBuy / Number(quantity)
 				).toFixed(pricePrecision);
 
 				const cumQuotePlusFeesPlusProfitSell =
-					cumQuote + Number((totalFees + PROFIT_PERCENT) * cumQuote);
+					cumQuote - Number(triggerProtect * cumQuote);
 				let activationPriceOnProfitSell = (
 					cumQuotePlusFeesPlusProfitSell / Number(quantity)
 				).toFixed(pricePrecision);
@@ -137,42 +101,23 @@ export const scalper = async () => {
 					currentPrice * config.ENTRY_SELL_PERCENT
 				).toFixed(pricePrecision);
 
-				let callbackRate = "5"; // config.STOP_LOSS_PERCENT;
-				// TODO Tabulate data
-				console.table(
-					[
-						{
-							SYMBOL: _symbol,
-							LAST_PRICE_5M: min_5Data.lastPrice,
-							CURRENT_PRICE: price_Info.price,
-							MODIFIED_PRICE: price,
-							PERCENT_CHANGE_5M: min_5Data.priceChangePercent,
-							TOTAL_FEES: totalFees,
-							ACTIVATION_PRICE: activationPriceSell,
-						},
-					],
-					[
-						"SYMBOL",
-						"LAST_PRICE_5M",
-						"CURRENT_PRICE",
-						"MODIFIED_PRICE",
-						"PERCENT_CHANGE_5M",
-						"TOTAL_FEES",
-						"ACTIVATION_PRICE",
-					],
-				);
+				let callbackRate = config.STOP_LOSS_PERCENT.toString();
+
+				let deadline = (Date.now() + 1000 * 60 * 5).toString(); // 5 minutes from now
+				let exit_Price = "0";
 
 				// TODO Querry open Positons
 
-				// TODO Compare priceChangePercent{15m and 5m }, lastPrice,  to check direction
+				// Compare priceChangePercent{15m and 5m }, lastPrice,  to check direction
 
 				if (
 					Math.sign(percentChange) == 1 &&
-					percentChange > 2 &&
+					percentChange > 0.5 &&
 					currentPrice >= last5M_Price
 				) {
 					// Positive percentage change
-					let side: orderSide = "BUY";
+					let side: OrderSide = "BUY";
+					exit_Price = activationPriceOnProfitBuy;
 
 					let params: INewOrder = {
 						symbol: _symbol,
@@ -180,11 +125,9 @@ export const scalper = async () => {
 						type,
 						timeInForce,
 						quantity,
-						reduceOnly: "true",
+						reduceOnly: "false",
 						price,
-						activationPrice: activationPriceBuy,
-						stopPrice: activationPriceOnProfitBuy,
-						callbackRate,
+						activationPrice: activationPriceOnProfitBuy,
 						priceProtect: "TRUE",
 						newOrderRespType: "RESULT",
 					};
@@ -193,11 +136,12 @@ export const scalper = async () => {
 					console.log(MultiOrders);
 				} else if (
 					Math.sign(percentChange) === -1 &&
-					percentChange < -2 &&
+					percentChange <= -0.5 &&
 					currentPrice <= last5M_Price
 				) {
 					//negative Percentage change
-					let side: orderSide = "SELL";
+					let side: OrderSide = "SELL";
+					exit_Price = activationPriceOnProfitSell;
 
 					let params: INewOrder = {
 						symbol: _symbol,
@@ -205,11 +149,9 @@ export const scalper = async () => {
 						type,
 						timeInForce,
 						quantity,
-						reduceOnly: "true",
+						reduceOnly: "false",
 						price,
-						activationPrice: activationPriceSell,
-						stopPrice: activationPriceOnProfitSell,
-						callbackRate,
+						activationPrice: activationPriceOnProfitSell,
 						priceProtect: "TRUE",
 						newOrderRespType: "RESULT",
 					};
@@ -217,14 +159,38 @@ export const scalper = async () => {
 					console.log(MultiOrders);
 				}
 
-				// TODO Send Multiple Orders
+				// Tabulate data
+				console.table(
+					[
+						{
+							SYMBOL: _symbol,
+							LAST_PRICE_5M: min_5Data.lastPrice,
+							PERCENT_CHANGE_5M: min_5Data.priceChangePercent,
+							CURRENT_PRICE: price_Info.price,
+							ACTIVATION_PRICE: currentPrice,
+							TOTAL_FEES: totalFees,
+							EXIT_PRICE: exit_Price,
+						},
+					],
+					[
+						"SYMBOL",
+						"LAST_PRICE_5M",
+						"PERCENT_CHANGE_5M",
+						"CURRENT_PRICE",
+						"ACTIVATION_PRICE",
+						"TOTAL_FEES",
+						"EXIT_PRICE",
+					],
+				);
+
+				//  Send Multiple Orders
 				if (MultiOrders.length > 4) {
 					console.log(`Multiple Orders Array to Submit: `, MultiOrders);
 					_USDMClient
 						.submitMultipleOrders(MultiOrders)
 						.then((receipts: any) => {
 							console.log("Orders Receipts:", receipts);
-							// TODO Save Orders to DB
+							// Save Orders to DB
 							for (i = 0; i < receipts.length; i++) {
 								let order = {
 									orderId: receipts[i].orderId,
@@ -238,11 +204,16 @@ export const scalper = async () => {
 									activatePrice: receipts[i].activatePrice,
 									cumQuote: receipts[i].cumQuote,
 									stopPrice: receipts[i].stopPrice,
+									takeProfitBuy: activationPriceOnProfitBuy,
+									takeProfitSell: activationPriceOnProfitSell,
 									totalFees: totalFees,
 									updateTime: receipts[i].updateTime,
 								};
-
-								saveToDB(order);
+								if (receipts[i].status === "NEW") {
+									saveToDB(order);
+								} else {
+									console.log(`Error saving Order to DB!`);
+								}
 							}
 						})
 						.catch((err) => {
